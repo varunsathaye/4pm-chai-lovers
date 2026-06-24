@@ -5,3 +5,5 @@ python-dotenv
 gitpython
 pytest>=7.0
 pytest-json-report
+coverage>=7.0
+pytest-cov

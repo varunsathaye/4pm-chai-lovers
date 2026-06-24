@@ -2,32 +2,49 @@
 
 **Team:** 4PM Chai Lovers · **PS:** MergeRequest-based Test Case Execution (SSDV / DevOps)
 
-This doc explains everything that changed and how to run it. Share with the team.
+This is the team-facing summary. For a deep dive into how every part works, see
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
 ## 1. TL;DR — what we built
 
-We turned the project from a **mocked dashboard** into a **real, working Test-Impact-Analysis engine**:
+A real **Test Impact Analysis (TIA)** engine that, for any commit, runs only the
+tests actually affected by the change — and proves it didn't skip anything that
+matters.
 
-- Before: the frontend showed hard-coded fake numbers (`dummyResponse`). The backend only did GitHub login. The two scripts (`diff_analyzer`, `test_mapper`) only ran from a `__main__` block and were never exposed.
-- Now: a real pipeline — **clone → diff (AST) → map tests (AST) → run only the impacted tests with pytest → return 100% real metrics** — wired end to end to the dashboard.
-- We added an **automotive ECU test suite** (BMS, motor, brake, CAN, diagnostics) and a one-click demo that proves the killer point: when a regression is injected, our *reduced* test set **still catches the bug**. That directly answers the eval criterion *"reduction in test execution time without compromising defect detection."*
+- **Before:** the dashboard showed hard-coded fake numbers; the backend only did
+  GitHub login.
+- **Now:** a real pipeline — **clone → coverage-based impact map → select only
+  impacted tests → run them + a full baseline → 100% real metrics** — wired end
+  to end to the dashboard, plus an automotive ECU test suite with ISO 26262
+  requirements traceability.
+
+The selection engine is **coverage-based** (it observes what each test actually
+executes), which catches *indirect/transitive* dependencies that simple
+text/AST matching would miss — and it falls back to a **full run** whenever it
+is not confident, so a defect can never silently slip through.
 
 ---
 
 ## 2. The demo (this is what we present)
 
-Two buttons on the dashboard run against a **bundled automotive ECU codebase** (26 tests across 5 ECU modules):
+Four buttons run against the bundled **automotive ECU codebase** (26 tests across
+5 modules: BMS, motor, brake, CAN, diagnostics):
 
-| Button | What happens | Result shown |
-|---|---|---|
-| **Safe Refactor** | We refactor `battery_management.py` (BMS). | TIA re-selects only the 6 battery tests (6/26). Full suite would take ~4.8s; smart run ~1.1s → **~77% time saved**, all green. |
-| **Inject Regression** | We corrupt the State-of-Charge formula in `compute_soc()`. | TIA selects the same 6 tests, runs in ~1.1s, and **`test_compute_soc_midpoint` FAILS** — the bug is caught. We did **not** skip the test that mattered. |
+| Button | Simulated change | Result | What it proves |
+|---|---|---|---|
+| 🟢 **Safe Refactor** | harmless edit to `compute_soc` | 3/26 tests, ~92% time saved, all green | precise selection + time saved |
+| 🔴 **Inject Regression** | bug in `compute_soc` | 3/26 tests, **one FAILS — bug caught** | defect detection |
+| 🟣 **Hidden Bug** | bug in shared `sensor_utils.clamp` (no test references it) | coverage still selects the 3 battery tests, **bug caught** | **coverage beats text matching** |
+| 🟡 **Safety Net** | brand-new untested function | runs the **full suite** (low confidence) | never skips when unsure |
 
-**The one-liner for judges:** *"We run a fraction of the tests and save ~77% of the time — and we still catch the regression a full run would catch. Speed without losing defect detection."*
+**Headline line for judges:** *"We run a fraction of the tests, save ~90% of the
+time, and still catch the regression a full run would catch — including bugs in
+shared code that no test mentions. And when we're not sure, we run everything."*
 
-All numbers (test counts, durations, pass/fail) are measured live, not hard-coded.
+That maps 1:1 onto the evaluation criteria: *accuracy of selection* and
+*reduction in time without compromising defect detection*.
 
 ---
 
@@ -37,10 +54,10 @@ All numbers (test counts, durations, pass/fail) are measured live, not hard-code
 ```bash
 cd backend
 python -m venv venv
-venv\Scripts\activate            # Windows  (source venv/bin/activate on Linux/Mac)
-pip install -r requirements.txt
+venv\Scripts\activate              # source venv/bin/activate on Linux/Mac
+pip install -r requirements.txt    # includes coverage + pytest-cov
 
-python -m app.demo.setup_demo    # ONE-TIME: builds the bundled demo git repo
+python -m app.demo.setup_demo      # ONE-TIME: builds the bundled demo git repo
 uvicorn app.main:app --reload
 ```
 
@@ -50,78 +67,84 @@ cd frontend
 npm install
 npm run dev
 ```
-Open http://localhost:5173 → click **"Continue in demo mode →"** → click **Safe Refactor** / **Inject Regression**.
+Open http://localhost:5173 → **"Continue in demo mode →"** → click any demo button.
 
-> GitHub OAuth still works if `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` are set in `backend/.env`, but **demo mode bypasses login** so the demo never depends on it.
+> GitHub OAuth still works if `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` are set
+> in `backend/.env`, but **demo mode bypasses login** so the demo never depends
+> on it.
+
+**Demo-day reset (always do this before presenting):**
+```bash
+cd backend && python -m app.demo.setup_demo   # clean, repeatable reset
+uvicorn app.main:app --reload
+```
 
 ---
 
-## 4. What changed, file by file
+## 4. Selection strategy (3 tiers)
 
-### Backend — new analysis engine (`backend/app/services/`)
-- **`diff_analyzer.py`** — Rewritten. For Python files it parses the real **AST** of the target revision and maps each changed line to its innermost enclosing function/method (so the "AST" claim is now *true*, not marketing). Keeps a regex fallback for non-Python repos.
-- **`test_mapper.py`** — Rewritten. Parses each test file's **AST** to extract imports + referenced identifiers, and links a test to a source file only if it imports that module or references a changed function. AST parsing means a name in a *comment* no longer causes a false match (the old version's main weakness).
-- **`test_runner.py`** — New. Runs pytest via `pytest-json-report` and captures **real** per-test outcomes, durations, and total session time. Runs both the impacted subset and the full suite (baseline).
-- **`pipeline.py`** — New. Orchestrates clone → diff → map → checkout → run, and builds the exact JSON the dashboard expects. (Closes git handles + cleans temp dirs safely on Windows.)
+1. **COVERAGE** (primary) — tests whose runtime coverage touched a changed
+   function. Per-test-case granularity; catches transitive dependencies.
+2. **AST** (fallback) — direct import/symbol matching, used when a coverage map
+   can't be built (e.g. an external repo we can't safely instrument).
+3. **FULL** (safety net) — runs everything when confidence is low (a change can't
+   be mapped, touches config, or selects zero tests).
+
+---
+
+## 5. What changed, file by file
+
+### Backend — analysis engine (`backend/app/services/`)
+- **`coverage_mapper.py`** *(new)* — builds the coverage map at the baseline and
+  selects impacted tests. The precision core.
+- **`traceability.py`** *(new)* — reads requirement / level / ASIL markers from
+  test files and joins them with `requirements.json`.
+- **`pipeline.py`** — orchestrates clone → map → select (3-tier) → run →
+  traceability → payload. Caches the coverage map per baseline commit.
+- **`test_runner.py`** — runs individual test node-ids (per-test granularity) and
+  captures real timings via `pytest-json-report`.
+- **`diff_analyzer.py`** — AST diff: maps changed lines to enclosing functions.
+- **`test_mapper.py`** — static AST mapper (used as the fallback strategy).
 
 ### Backend — API (`backend/app/`)
-- **`api/analyze.py`** — New endpoints:
-  - `POST /api/analyze` — analyze any Git repo: `{ repo_url, target_commit, base_commit?, target_dir?, tests_dir? }` (base defaults to the commit's parent).
-  - `POST /api/analyze/demo` — run a canned scenario: `{ scenario: "safe" | "regression" }`.
-  - `GET /api/analyze/demo/scenarios` — list scenarios.
-- **`schemas/analyze.py`** — New request models.
-- **`main.py`** — Registered the analyze router + a `/api/health` check.
-- **`requirements.txt`** — Added `gitpython`, `pytest>=7.0`, `pytest-json-report`.
-- **`.gitignore`** — Added (`.demo_repo/`, `venv/`, `__pycache__/`, `.env`, etc.).
+- **`api/analyze.py`** — `POST /api/analyze` (any repo), `POST /api/analyze/demo`
+  (canned scenarios), `GET /api/analyze/demo/scenarios`.
+- **`api/auth.py`** — GitHub OAuth code exchange (optional).
+- **`main.py`** — registers routers + `/api/health`.
 
-### Backend — bundled automotive demo (`backend/app/demo/`)
-- **`codebase/src/`** — ECU control logic (host-testable / SIL):
-  `battery_management.py` (BMS: SOC, cell balancing, thermal), `motor_controller.py` (torque clamp, RPM, regen), `brake_system.py` (ABS, slip ratio), `can_bus.py` (J1939-style encode/decode/checksum), `diagnostics.py` (DTC handling).
-- **`codebase/tests/`** — 26 pytest cases across the 5 modules.
-- **`codebase/conftest.py`** — A `hil_bench` fixture adds a small, **documented** per-test latency that models Hardware-in-the-Loop bench setup time. This is what makes "time saved" a real measurement with a realistic ratio (real HIL cases take minutes each).
-- **`setup_demo.py`** — Builds `backend/.demo_repo` as a real git repo with 3 commits: `base` → `safe refactor` → `injected regression`, and writes the commit hashes to `.demo_repo/commits.json`.
+### Backend — bundled demo (`backend/app/demo/`)
+- **`codebase/src/`** — ECU control logic: `battery_management`, `motor_controller`,
+  `brake_system`, `can_bus`, `diagnostics`, `sensor_utils` (shared helper).
+- **`codebase/tests/`** — 26 pytest cases tagged with `req`/`level`/`asil` markers.
+- **`codebase/conftest.py`** — per-test latency by level (UNIT/SIL/HIL).
+- **`codebase/requirements.json`** — the requirements registry (ISO 26262).
+- **`setup_demo.py`** — builds the demo git repo: a clean baseline + one branch
+  per scenario (safe / regression / transitive / safety_net).
 
 ### Frontend (`frontend/src/`)
-- **`App.jsx`** — Removed `dummyResponse`. Now calls the real API (`/api/analyze` and `/api/analyze/demo`), added the two demo buttons, an error banner, and a pass/fail scenario banner. Loading steps now describe the real pipeline.
-- **`components/GithubAuthGuard.jsx`** — Added a **"Continue in demo mode"** button so the demo doesn't require GitHub credentials.
-- The dashboard components (`Header`, `KPIs`, `Charts`, `DependencyTrace`) were already good and are **unchanged** — they consume the same JSON shape the backend now produces for real.
+- **`App.jsx`** — calls the real API, 4 demo buttons, scenario banner, error handling.
+- **`components/Dashboard/RequirementsImpact.jsx`** *(new)* — selection method,
+  confidence, highest ASIL, HIL tests avoided, impacted requirements.
+- **`components/Dashboard/DependencyTrace.jsx`** — per-test level/requirement/ASIL badges.
+- **`KPIs.jsx`, `Charts.jsx`, `Header.jsx`** — metric cards & charts (unchanged shape).
+- **`GithubAuthGuard.jsx`** — adds a "Continue in demo mode" bypass.
 
 ---
 
-## 5. How the engine works (for Q&A with judges)
-
-```
-commit range (base..target)
-        │
-        ▼
-[diff_analyzer]  git diff + Python AST  ──►  changed source functions
-        │                                     e.g. src/battery_management.py :: compute_soc
-        ▼
-[test_mapper]    AST of each test file  ──►  tests that import/use those functions
-        │                                     e.g. tests/test_battery_management.py
-        ▼
-[test_runner]    pytest (impacted subset) + pytest (full suite)
-        │                                     real durations + pass/fail
-        ▼
-[pipeline]       metrics + dependency trace  ──►  dashboard
-```
-
-**Anticipated judge questions & answers:**
-- *"Is the time saved real?"* — Yes. We run both the subset and the full suite with pytest and report measured wall-clock time. The per-test HIL latency is declared in `conftest.py`.
-- *"How do you avoid skipping a needed test?"* — The regression demo proves it: the reduced set still fails on the injected bug. Mapping is via imports + referenced symbols (AST), and if no specific function resolves we fall back to module-level matching so we never under-select.
-- *"Does it generalize beyond this repo?"* — `POST /api/analyze` works on any Git URL + commit; the analyzer has a regex fallback for non-Python languages.
+## 6. Known limitations / next steps
+- **MR/CI integration (P2)** not yet built — a GitHub Action that runs the engine
+  on every PR and posts the impact summary. This is the next big win and makes it
+  literally "MergeRequest based".
+- Coverage map is rebuilt when the baseline commit changes; for very large repos
+  you'd update it incrementally instead of rebuilding.
+- Non-Python repos get diff + AST mapping but not pytest execution metrics.
 
 ---
 
-## 6. Known limitations / next steps (be honest if asked)
-- Test selection is at **file granularity** (we run a whole impacted test file, not individual cases). Easy next step: node-id level selection.
-- Cross-module/transitive dependencies (A imports B, B changes) aren't traced yet — would need an import graph.
-- The `/api/analyze` path for arbitrary repos assumes a Python/pytest project for execution metrics; non-pytest repos still get diff + mapping.
-
----
-
-## 7. Suggested 5-minute demo script
+## 7. 5-minute demo script
 1. Open dashboard → "Continue in demo mode".
-2. Click **Safe Refactor** → point at: 6 of 26 tests selected, ~77% saved, all green, dependency trace shows `battery_management.py → its tests`.
-3. Click **Inject Regression** → same selection, but `test_compute_soc_midpoint` is **red**. Deliver the line: *"Fewer tests, less time — and we still caught the bug."*
-4. (Optional) Paste a real GitHub repo URL + commit into the form to show it's not hardcoded.
+2. **Safe Refactor** → 3/26 tests, ~92% saved, all green, traces to SR-BMS-001 (ASIL C).
+3. **Inject Regression** → same 3 tests, one **red**: *"fewer tests, less time, bug still caught."*
+4. **Hidden Bug** → change a shared helper no test mentions; coverage still catches it: *"text matching would've skipped this."*
+5. **Safety Net** → untested change → full run: *"when we're not sure, we never skip."*
+6. (Optional) paste a real GitHub repo URL + commit into the form to show it's not hardcoded.

@@ -87,12 +87,17 @@ def run_full_suite(repo_dir: str, tests_dir: str) -> Dict[str, Any]:
     }
 
 
-def run_selected(repo_dir: str, test_files: List[str]) -> Dict[str, Any]:
-    """Smart run: execute only the impacted test files."""
-    if not test_files:
+def run_selected(repo_dir: str, test_targets: List[str]) -> Dict[str, Any]:
+    """Smart run: execute only the impacted tests.
+
+    ``test_targets`` may be whole files (``tests/x.py``) or individual test
+    node-ids (``tests/x.py::test_y``) -- pytest accepts both, so coverage-based
+    selection gets per-test-case granularity for free.
+    """
+    if not test_targets:
         return {"total_tests": 0, "duration_seconds": 0.0, "tests": [], "passed": True}
 
-    result = _run_pytest(repo_dir, test_files)
+    result = _run_pytest(repo_dir, test_targets)
     report = result["report"]
     tests = _parse_tests(report)
     passed = all(t["status"] == "passed" for t in tests) and result["returncode"] == 0

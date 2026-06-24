@@ -4,4 +4,5 @@ __pycache__/
 *.pyc
 .env
 .demo_repo/
+.tia_cache/
 .pytest_cache/

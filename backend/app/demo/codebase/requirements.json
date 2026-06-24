@@ -1,0 +1,15 @@
+{
+  "SR-BMS-001": {"title": "Battery SOC estimation accuracy", "asil": "C", "component": "Battery Management"},
+  "SR-BMS-002": {"title": "Charge safety interlock (temperature window)", "asil": "C", "component": "Battery Management"},
+  "SR-BMS-003": {"title": "Passive cell balancing trigger", "asil": "B", "component": "Battery Management"},
+  "SR-BMS-004": {"title": "Pack thermal state classification", "asil": "C", "component": "Battery Management"},
+  "SR-MOT-001": {"title": "Traction torque limiting", "asil": "D", "component": "Motor Control"},
+  "SR-MOT-002": {"title": "Vehicle speed to motor RPM", "asil": "B", "component": "Motor Control"},
+  "SR-MOT-003": {"title": "Regenerative braking torque", "asil": "C", "component": "Motor Control"},
+  "SR-BRK-001": {"title": "Wheel slip / lock detection", "asil": "D", "component": "Brake System"},
+  "SR-BRK-002": {"title": "ABS pressure modulation", "asil": "D", "component": "Brake System"},
+  "SR-CAN-001": {"title": "CAN signal encode/decode integrity", "asil": "B", "component": "CAN Bus"},
+  "SR-CAN-002": {"title": "CAN frame checksum validation", "asil": "B", "component": "CAN Bus"},
+  "SR-DIAG-001": {"title": "DTC format validation", "asil": "B", "component": "Diagnostics"},
+  "SR-DIAG-002": {"title": "Active DTC detection & severity", "asil": "B", "component": "Diagnostics"}
+}

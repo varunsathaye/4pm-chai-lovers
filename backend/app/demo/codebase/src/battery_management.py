@@ -4,6 +4,8 @@ Pure-Python control logic extracted from the ECU firmware so it can be
 exercised with host-based (SIL) unit tests on the CI runner.
 """
 
+from src.sensor_utils import clamp
+
 V_MIN = 3.0   # fully discharged cell voltage (V)
 V_MAX = 4.2   # fully charged cell voltage (V)
 MIN_CHARGE_TEMP_C = 0
@@ -13,11 +15,11 @@ BALANCE_THRESHOLD_V = 0.05
 
 def compute_soc(cell_voltage):
     """Estimate State of Charge (%) from a single cell voltage."""
-    if cell_voltage <= V_MIN:
-        return 0.0
-    if cell_voltage >= V_MAX:
-        return 100.0
-    soc = (cell_voltage - V_MIN) / (V_MAX - V_MIN) * 100.0  # <<SOC_FORMULA>>
+    # Clamp the raw cell voltage into the valid window via the shared helper.
+    # NOTE: a bug inside sensor_utils.clamp() will silently corrupt SOC here,
+    # even though no battery test imports sensor_utils directly.
+    v = clamp(cell_voltage, V_MIN, V_MAX)
+    soc = (v - V_MIN) / (V_MAX - V_MIN) * 100.0  # <<SOC_FORMULA>>
     return round(soc, 2)
 
 

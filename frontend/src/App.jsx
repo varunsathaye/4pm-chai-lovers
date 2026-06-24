@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, ShieldAlert, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Zap, ShieldAlert, AlertTriangle, CheckCircle2, GitMerge, LifeBuoy } from 'lucide-react';
 import InputForm from './components/InputForm';
 import EmptyState from './components/EmptyState';
 import LoadingState from './components/LoadingState';
@@ -7,6 +7,7 @@ import Header from './components/Dashboard/Header';
 import KPIs from './components/Dashboard/KPIs';
 import Charts from './components/Dashboard/Charts';
 import DependencyTrace from './components/Dashboard/DependencyTrace';
+import RequirementsImpact from './components/Dashboard/RequirementsImpact';
 
 import GithubAuthGuard from './components/GithubAuthGuard';
 
@@ -128,6 +129,20 @@ export default function App() {
               >
                 <ShieldAlert className="h-4 w-4" /> Inject Regression
               </button>
+              <button
+                onClick={() => runDemo('transitive')}
+                disabled={isAnalyzing}
+                className="flex items-center gap-2 bg-fuchsia-600/90 hover:bg-fuchsia-500 text-white text-sm px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <GitMerge className="h-4 w-4" /> Hidden Bug
+              </button>
+              <button
+                onClick={() => runDemo('safety_net')}
+                disabled={isAnalyzing}
+                className="flex items-center gap-2 bg-amber-600/90 hover:bg-amber-500 text-white text-sm px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <LifeBuoy className="h-4 w-4" /> Safety Net
+              </button>
             </div>
           </div>
 
@@ -148,24 +163,29 @@ export default function App() {
           {hasResults && pipelineData && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
               {pipelineData.scenario && (
-                <div className={`flex items-center gap-3 rounded-2xl px-5 py-4 border ${
+                <div className={`flex items-start gap-3 rounded-2xl px-5 py-4 border ${
                   pipelineData.analysis?.all_selected_passed
                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                     : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
                 }`}>
                   {pipelineData.analysis?.all_selected_passed
-                    ? <CheckCircle2 className="h-5 w-5" />
-                    : <ShieldAlert className="h-5 w-5" />}
+                    ? <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" />
+                    : <ShieldAlert className="h-5 w-5 mt-0.5 shrink-0" />}
                   <div className="text-sm">
                     <span className="font-semibold">{pipelineData.scenario.label}:</span>{' '}
-                    {pipelineData.analysis?.all_selected_passed
-                      ? 'Impacted tests re-selected and all passed — change is safe.'
-                      : 'A regression was injected — and the selected subset CAUGHT it. No relevant test was skipped.'}
+                    {pipelineData.scenario.expectation}
+                    {!pipelineData.analysis?.all_selected_passed &&
+                      ' — the selected subset CAUGHT it. No relevant test was skipped.'}
                   </div>
                 </div>
               )}
               <Header pipeline_run={pipelineData.pipeline_run} />
               <KPIs metrics={pipelineData.metrics} />
+              <RequirementsImpact
+                analysis={pipelineData.analysis}
+                traceability={pipelineData.traceability}
+                metrics={pipelineData.metrics}
+              />
               <Charts metrics={pipelineData.metrics} />
               <DependencyTrace dependency_trace={pipelineData.dependency_trace} />
             </div>
