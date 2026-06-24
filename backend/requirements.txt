@@ -2,3 +2,6 @@ fastapi
 uvicorn
 requests
 python-dotenv
+gitpython
+pytest>=7.0
+pytest-json-report

@@ -37,13 +37,20 @@ export default function GithubAuthGuard({ isAuthenticated, setIsAuthenticated, c
           Authorize SmartTIA to read your Git history and codebase. We use this to map abstract syntax trees and compute execution routes instantly.
         </p>
         
-        <a 
+        <a
           href={githubAuthUrl}
           className="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3.5 rounded-xl font-semibold transition-all shadow-[0_0_20px_-5px_theme(colors.emerald.500)] flex items-center justify-center gap-2"
         >
           Connect with GitHub
         </a>
-        
+
+        <button
+          onClick={() => setIsAuthenticated(true)}
+          className="mt-4 text-sm text-slate-400 hover:text-emerald-400 transition-colors font-medium"
+        >
+          Continue in demo mode &rarr;
+        </button>
+
         <p className="mt-6 text-xs text-slate-600 font-medium uppercase tracking-wider">
           One-Shot Execution &bull; No Data Stored
         </p>
