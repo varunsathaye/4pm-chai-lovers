@@ -75,8 +75,12 @@ def get_tests_to_run(diff_json_data, repo_path, target_commit, tests_dir_prefix=
 
 
 # --- Local Testing Block ---
+# --- Local Testing Block ---
 if __name__ == "__main__":
-    DUMMY_REPO_PATH = "../dummy-codebase-techathon" 
+    import tempfile
+    
+    # Define your remote repository URL here
+    REMOTE_URL = "https://github.com/varunsathaye/dummy-codebase-techathon.git" 
     
     BASE = "7235e3e10261badfcdd065a85c6d579148aa1091" 
     TARGET = "9997e84e61f5f59b2b84948d4bfccb5289c3dacd" 
@@ -84,34 +88,50 @@ if __name__ == "__main__":
     # Path relative to the Git root
     TESTS_DIR_PREFIX = "tests" 
     
-    print("--- Phase 1: Analyzing Git Diff ---\n")
-    live_json_output = diff_analyzer.get_impacted_files(
-        repo_path=DUMMY_REPO_PATH,
-        base_commit=BASE,
-        target_commit=TARGET,
-        target_dir="src/"
-    )
+    print(f"Cloning {REMOTE_URL} to a temporary directory...")
     
-    for item in live_json_output.get("added_or_modified", []):
-        filename = item["file"]
+    # Create a temporary directory that cleans itself up automatically
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            # Clone the repo into the temp folder
+            git.Repo.clone_from(REMOTE_URL, temp_dir)
+            print("Clone successful.\n")
+        except git.exc.GitCommandError as e:
+            print(f"❌ Error cloning repository: {e}")
+            exit(1)
+
+        print("--- Phase 1: Analyzing Git Diff ---\n")
         
-        clean_funcs = set()
-        for sig in item.get("impacted_functions", []):
-            if sig == "global_scope_or_unknown":
-                continue
-            match = re.search(r'([a-zA-Z0-9_]+)\s*\(', sig)
-            if match:
-                clean_funcs.add(match.group(1))
-                
-        formatted_funcs = str(clean_funcs) if clean_funcs else "{No functions detected}"
-        change_tag = "[ADDED]" if item["change_type"] == 'A' else "[MODIFIED]"
-        print(f"{filename} {change_tag}: {formatted_funcs}")
-    
-    
-    print("\n--- Phase 2: Mapping Impacted Tests ---")
-    
-    # Notice we now pass repo_path and target_commit directly
-    final_test_list = get_tests_to_run(live_json_output, DUMMY_REPO_PATH, TARGET, TESTS_DIR_PREFIX)
-    
-    print("\n--- Final Execution Payload ---")
-    print(json.dumps(final_test_list, indent=4))
+        # Pass the temp_dir instead of the local hardcoded path
+        live_json_output = diff_analyzer.get_impacted_files(
+            repo_path=temp_dir,
+            base_commit=BASE,
+            target_commit=TARGET,
+            target_dir="src/"
+        )
+        
+        for item in live_json_output.get("added_or_modified", []):
+            filename = item["file"]
+            
+            clean_funcs = set()
+            for sig in item.get("impacted_functions", []):
+                if sig == "global_scope_or_unknown":
+                    continue
+                match = re.search(r'([a-zA-Z0-9_]+)\s*\(', sig)
+                if match:
+                    clean_funcs.add(match.group(1))
+                    
+            formatted_funcs = str(clean_funcs) if clean_funcs else "{No functions detected}"
+            change_tag = "[ADDED]" if item["change_type"] == 'A' else "[MODIFIED]"
+            print(f"{filename} {change_tag}: {formatted_funcs}")
+        
+        
+        print("\n--- Phase 2: Mapping Impacted Tests ---")
+        
+        # Pass the temp_dir here as well
+        final_test_list = get_tests_to_run(live_json_output, temp_dir, TARGET, TESTS_DIR_PREFIX)
+        
+        print("\n--- Final Execution Payload ---")
+        print(json.dumps(final_test_list, indent=4))
+        
+    print("\n🧹 Temporary directory cleaned up.")
