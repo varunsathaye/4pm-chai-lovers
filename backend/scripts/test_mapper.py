@@ -78,7 +78,7 @@ def get_tests_to_run(diff_json_data, repo_path, target_commit, tests_dir_prefix=
 if __name__ == "__main__":
     DUMMY_REPO_PATH = "../dummy-codebase-techathon" 
     
-    BASE = "18550d2583e0cfc5dd2f3ae17ede5322c43feaf3" 
+    BASE = "7235e3e10261badfcdd065a85c6d579148aa1091" 
     TARGET = "9997e84e61f5f59b2b84948d4bfccb5289c3dacd" 
     
     # Path relative to the Git root
