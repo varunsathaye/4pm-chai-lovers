@@ -7,6 +7,9 @@ import KPIs from './components/Dashboard/KPIs';
 import Charts from './components/Dashboard/Charts';
 import DependencyTrace from './components/Dashboard/DependencyTrace';
 
+import GithubAuthGuard from './components/GithubAuthGuard';
+import GithubCallback from './components/GithubCallback';
+
 const dummyResponse = {
   "pipeline_run": {
     "commit_hash": "a1b2c3d",
@@ -43,6 +46,9 @@ export default function App() {
   const [pipelineData, setPipelineData] = useState(null);
   const [loadingStep, setLoadingStep] = useState(0);
 
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
   const loadingSteps = [
     "> Initialize connection...",
     "> Cloning repository...",
@@ -50,6 +56,25 @@ export default function App() {
     "> Selecting optimal tests...",
     "> Generating impact matrix..."
   ];
+
+  // ✅ FIX: Moved useEffect ABOVE the early return!
+  useEffect(() => {
+    let interval;
+    if (isAnalyzing) {
+      interval = setInterval(() => {
+        setLoadingStep((prev) => (prev < loadingSteps.length - 1 ? prev + 1 : prev));
+      }, 500);
+    }
+    return () => clearInterval(interval);
+  }, [isAnalyzing]);
+
+  // Routing simulation for the callback logic without react-router
+  // const isCallbackRoute = window.location.pathname === '/auth/callback';
+
+  // // Safe to return early now!
+  // if (isCallbackRoute && !isAuthenticated) {
+  //   return <GithubCallback setIsAuthenticated={setIsAuthenticated} />;
+  // }
 
   const handleAnalyze = (e) => {
     e.preventDefault();
@@ -67,39 +92,31 @@ export default function App() {
     }, 2500);
   };
 
-  useEffect(() => {
-    let interval;
-    if (isAnalyzing) {
-      interval = setInterval(() => {
-        setLoadingStep((prev) => (prev < loadingSteps.length - 1 ? prev + 1 : prev));
-      }, 500);
-    }
-    return () => clearInterval(interval);
-  }, [isAnalyzing]);
-
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans p-4 md:p-8 selection:bg-emerald-500/30">
-      <div className="max-w-7xl mx-auto space-y-8">
-        
-        <InputForm 
-          repoUrl={repoUrl} setRepoUrl={setRepoUrl}
-          commitHash={commitHash} setCommitHash={setCommitHash}
-          handleAnalyze={handleAnalyze} isAnalyzing={isAnalyzing}
-        />
+    <GithubAuthGuard isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated}>
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-8 selection:bg-emerald-500/30">
+        <div className="max-w-7xl mx-auto space-y-8">
+          
+          <InputForm 
+            repoUrl={repoUrl} setRepoUrl={setRepoUrl}
+            commitHash={commitHash} setCommitHash={setCommitHash}
+            handleAnalyze={handleAnalyze} isAnalyzing={isAnalyzing}
+          />
 
-        {!hasResults && !isAnalyzing && <EmptyState />}
-        
-        {isAnalyzing && <LoadingState loadingSteps={loadingSteps} loadingStep={loadingStep} />}
+          {!hasResults && !isAnalyzing && <EmptyState />}
+          
+          {isAnalyzing && <LoadingState loadingSteps={loadingSteps} loadingStep={loadingStep} />}
 
-        {hasResults && pipelineData && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <Header pipeline_run={pipelineData.pipeline_run} />
-            <KPIs metrics={pipelineData.metrics} />
-            <Charts metrics={pipelineData.metrics} />
-            <DependencyTrace dependency_trace={pipelineData.dependency_trace} />
-          </div>
-        )}
+          {hasResults && pipelineData && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <Header pipeline_run={pipelineData.pipeline_run} />
+              <KPIs metrics={pipelineData.metrics} />
+              <Charts metrics={pipelineData.metrics} />
+              <DependencyTrace dependency_trace={pipelineData.dependency_trace} />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </GithubAuthGuard>
   );
 }
