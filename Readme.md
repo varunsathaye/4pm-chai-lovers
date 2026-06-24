@@ -44,10 +44,42 @@ A smart, dynamic test execution mechanism that analyzes Git commit history and c
 ---
 
 ## 💻 Local Development Setup (Ubuntu/Linux)
-*Detailed setup instructions will be populated here as modules are developed.*
 
 ### Prerequisites
 * Git
+* VS Code
+* Node.js (for React frontend)
+* Python 3.9+ (for FastAPI backend)
+
+### 1️⃣ Frontend Setup (React + Vite)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+The dashboard will be running at `http://localhost:5173`.
+
+### 2️⃣ Backend Setup (FastAPI)
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # Or `venv\Scripts\activate` on Windows
+pip install -r requirements.txt
+```
+
+**Environment Variables:**
+Create a `.env` file inside the `/backend` folder and add your GitHub OAuth App credentials:
+```env
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+```
+
+**Run the Server:**
+Using Uvicorn, run the FastAPI backend pointing to our updated architecture:
+```bash
+uvicorn app.main:app --reload
+```
+The API engine will be running at `http://localhost:8000`.
 * VS Code
 * Node.js (for React frontend)
 * Python 3.x
