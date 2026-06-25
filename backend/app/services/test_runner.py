@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 
 def _run_pytest(repo_dir: str, test_targets: Optional[List[str]]) -> Dict[str, Any]:
@@ -75,9 +75,11 @@ def _parse_tests(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     return parsed
 
 
-def run_full_suite(repo_dir: str, tests_dir: str) -> Dict[str, Any]:
+def run_full_suite(repo_dir: str, tests_dirs: Union[str, List[str]]) -> Dict[str, Any]:
     """Baseline: run the entire suite to measure standard-CI cost."""
-    result = _run_pytest(repo_dir, [tests_dir])
+    if isinstance(tests_dirs, str):
+        tests_dirs = [tests_dirs]
+    result = _run_pytest(repo_dir, tests_dirs)
     report = result["report"]
     tests = _parse_tests(report)
     return {

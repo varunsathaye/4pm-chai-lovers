@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -8,8 +8,8 @@ class AnalyzeRequest(BaseModel):
     repo_url: str
     target_commit: str = "HEAD"
     base_commit: Optional[str] = None
-    target_dir: str = "src/"
-    tests_dir: str = "tests"
+    target_dir: List[str] = ["src/"]
+    tests_dir: List[str] = ["tests"]
     github_token: Optional[str] = None
 
 
@@ -18,8 +18,8 @@ class MapRequest(BaseModel):
     repo_url: str
     target_commit: str = "HEAD"
     base_commit: Optional[str] = None
-    source_dir: str = "src/"
-    tests_dir: str = "tests"
+    source_dir: List[str] = ["src/"]
+    tests_dir: List[str] = ["tests"]
     github_token: Optional[str] = None
 
 

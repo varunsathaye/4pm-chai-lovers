@@ -26,7 +26,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple, Union
 
 
 def _function_ranges(source: str) -> List[Tuple[str, int, int]]:
@@ -68,7 +68,11 @@ def _clean_context(ctx: str) -> str:
     return ctx.split("|", 1)[0]
 
 
-def build_coverage_map(repo_dir: str, source_dir: str = "src", tests_dir: str = "tests") -> Dict[str, Any]:
+def build_coverage_map(
+    repo_dir: str,
+    source_dirs: Union[str, List[str]] = "src",
+    tests_dirs: Union[str, List[str]] = "tests",
+) -> Dict[str, Any]:
     """Run the suite with coverage contexts and build the function->tests map.
 
     Must be called with ``repo_dir`` already checked out at the baseline commit.
@@ -80,13 +84,19 @@ def build_coverage_map(repo_dir: str, source_dir: str = "src", tests_dir: str = 
           "ok": True
         }
     """
+    if isinstance(source_dirs, str):
+        source_dirs = [source_dirs]
+    if isinstance(tests_dirs, str):
+        tests_dirs = [tests_dirs]
+
     data_file = os.path.join(repo_dir, ".coverage")
     if os.path.exists(data_file):
         os.remove(data_file)
 
+    cov_flags = [f"--cov={d.rstrip('/')}" for d in source_dirs]
     cmd = [
-        sys.executable, "-m", "pytest", tests_dir,
-        f"--cov={source_dir}", "--cov-context=test", "--cov-report=",
+        sys.executable, "-m", "pytest", *tests_dirs,
+        *cov_flags, "--cov-context=test", "--cov-report=",
         "-q", "-p", "no:cacheprovider",
     ]
     proc = subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True, timeout=600)
@@ -116,7 +126,7 @@ def build_coverage_map(repo_dir: str, source_dir: str = "src", tests_dir: str = 
             rel = abs_path.relative_to(repo_path).as_posix()
         except ValueError:
             continue
-        if not rel.startswith(source_dir):
+        if not any(rel.startswith(d) for d in source_dirs):
             continue
         covered_files.add(rel)
 

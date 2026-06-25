@@ -159,8 +159,8 @@ def build_demo_repo() -> dict:
 
     commits = {
         "repo_path": str(DEMO_REPO_DIR),
-        "target_dir": "src/",
-        "tests_dir": "tests",
+        "target_dir": ["src/"],
+        "tests_dir": ["tests"],
         "base": base,
         "scenarios": {
             "safe": {

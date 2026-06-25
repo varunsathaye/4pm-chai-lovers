@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import git
 
@@ -25,25 +25,32 @@ import git
 def read_test_timings(
     repo_path: str,
     commit_sha: str,
-    tests_dir: str,
+    tests_dirs: Union[str, List[str]],
     filename: str = "test_execution_time.json",
 ) -> Dict[str, float]:
     """Read test timing JSON from the git tree at *commit_sha*.
 
-    Returns ``{test_file_path: duration_seconds}`` or an empty dict when the
-    file does not exist or cannot be parsed.
+    Checks each directory in *tests_dirs* for the timing file and merges
+    all results. Returns ``{test_file_path: duration_seconds}`` or an empty
+    dict when no timing file exists or cannot be parsed.
     """
-    timing_path = os.path.join(tests_dir, filename).replace("\\", "/")
+    if isinstance(tests_dirs, str):
+        tests_dirs = [tests_dirs]
     repo = git.Repo(repo_path)
-    try:
-        blob = repo.commit(commit_sha).tree / timing_path
-        content = blob.data_stream.read().decode("utf-8", errors="ignore")
-        data = json.loads(content)
-        if isinstance(data, dict):
-            return {k: float(v) for k, v in data.items() if isinstance(v, (int, float))}
-    except (KeyError, json.JSONDecodeError, TypeError, Exception):
-        pass
-    return {}
+    merged: Dict[str, float] = {}
+    for td in tests_dirs:
+        timing_path = os.path.join(td, filename).replace("\\", "/")
+        try:
+            blob = repo.commit(commit_sha).tree / timing_path
+            content = blob.data_stream.read().decode("utf-8", errors="ignore")
+            data = json.loads(content)
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    if isinstance(v, (int, float)):
+                        merged[k] = float(v)
+        except (KeyError, json.JSONDecodeError, TypeError, Exception):
+            pass
+    return merged
 
 
 def compute_timing_metrics(

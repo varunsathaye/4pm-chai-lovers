@@ -49,7 +49,7 @@ def _is_testable_file(path: str) -> bool:
     return ext.lower() in _TEST_EXTENSIONS
 
 
-def _has_python_tests(repo_path: str, commit_sha: str, tests_dir: str) -> bool:
+def _has_python_tests(repo_path: str, commit_sha: str, tests_dirs: List[str]) -> bool:
     """Quick check if the test directory contains any Python test files."""
     repo = git.Repo(repo_path)
     try:
@@ -57,13 +57,13 @@ def _has_python_tests(repo_path: str, commit_sha: str, tests_dir: str) -> bool:
     except git.exc.GitCommandError:
         return False
     for p in paths:
-        if p.startswith(tests_dir) and p.endswith(".py"):
+        if any(p.startswith(d) for d in tests_dirs) and p.endswith(".py"):
             return True
     return False
 
 
-def _collect_test_files(repo_path: str, commit_sha: str, tests_dir: str) -> List[str]:
-    """Return all testable source files under *tests_dir* at *commit_sha*."""
+def _collect_test_files(repo_path: str, commit_sha: str, tests_dirs: List[str]) -> List[str]:
+    """Return all testable source files under any *tests_dir* at *commit_sha*."""
     repo = git.Repo(repo_path)
     files: List[str] = []
     try:
@@ -71,7 +71,7 @@ def _collect_test_files(repo_path: str, commit_sha: str, tests_dir: str) -> List
     except git.exc.GitCommandError:
         return files
     for p in paths:
-        if p.startswith(tests_dir) and _is_testable_file(p):
+        if any(p.startswith(d) for d in tests_dirs) and _is_testable_file(p):
             files.append(p)
     return files
 
@@ -89,7 +89,7 @@ def _cache_key(repo_source: str, base_sha: str) -> Path:
 
 
 def _get_coverage_map(repo_source: str, work_dir: str, base_sha: str,
-                      source_dir: str, tests_dir: str) -> Dict[str, Any]:
+                      source_dirs: List[str], tests_dirs: List[str]) -> Dict[str, Any]:
     """Load the cached coverage map for this baseline, or build + cache it."""
     cache_file = _cache_key(repo_source, base_sha)
     if cache_file.exists():
@@ -102,7 +102,7 @@ def _get_coverage_map(repo_source: str, work_dir: str, base_sha: str,
         except json.JSONDecodeError:
             cache_file.unlink(missing_ok=True)
 
-    cov_map = coverage_mapper.build_coverage_map(work_dir, source_dir.rstrip("/"), tests_dir)
+    cov_map = coverage_mapper.build_coverage_map(work_dir, source_dirs, tests_dirs)
     if cov_map.get("ok"):
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps(cov_map))
@@ -113,10 +113,14 @@ def run_analysis(
     repo_source: str,
     target_commit: str = "HEAD",
     base_commit: Optional[str] = None,
-    target_dir: str = "src/",
-    tests_dir: str = "tests",
+    target_dir: List[str] = None,
+    tests_dir: List[str] = None,
     github_token: Optional[str] = None,
 ) -> Dict[str, Any]:
+    if target_dir is None:
+        target_dir = ["src/"]
+    if tests_dir is None:
+        tests_dir = ["tests"]
     work_dir = tempfile.mkdtemp(prefix="smarttia_")
 
     # If a GitHub token is provided, embed it in the URL for authentication
@@ -132,7 +136,6 @@ def run_analysis(
         resolved_base = _resolve_base(repo, target_commit, base_commit)
         target_sha = repo.commit(target_commit).hexsha
         commit_obj = repo.commit(target_sha)
-        source_dir = target_dir.rstrip("/") or "src"
 
         # 1. Diff base..target -> impacted source functions (AST)
         diff_data = diff_analyzer.get_impacted_files(
@@ -141,7 +144,7 @@ def run_analysis(
 
         # 2. Build/load coverage map at the BASELINE (precision engine)
         repo.git.checkout(resolved_base, force=True)
-        cov_map = _get_coverage_map(repo_source, work_dir, resolved_base, source_dir, tests_dir)
+        cov_map = _get_coverage_map(repo_source, work_dir, resolved_base, target_dir, tests_dir)
 
         # 3. Select impacted tests
         selection = _select(cov_map, diff_data, work_dir, target_sha, tests_dir)
@@ -214,7 +217,7 @@ def run_analysis(
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
-def _select(cov_map, diff_data, work_dir, target_sha, tests_dir) -> Dict[str, Any]:
+def _select(cov_map, diff_data, work_dir, target_sha, tests_dirs) -> Dict[str, Any]:
     """Pick tests with the best available strategy + decide on safety fallback."""
     changed_files = [i["file"] for i in diff_data.get("added_or_modified", [])]
 
@@ -226,7 +229,7 @@ def _select(cov_map, diff_data, work_dir, target_sha, tests_dir) -> Dict[str, An
         unmapped = result["unmapped"]
     else:
         # No coverage map -> static AST mapping fallback
-        ast_map = test_mapper.map_tests(diff_data, work_dir, target_sha, tests_dir_prefix=tests_dir)
+        ast_map = test_mapper.map_tests(diff_data, work_dir, target_sha, tests_dir_prefixes=tests_dirs)
         method = "ast"
         by_source = ast_map["by_source"]
         targets = ast_map["selected_test_files"]
@@ -242,7 +245,7 @@ def _select(cov_map, diff_data, work_dir, target_sha, tests_dir) -> Dict[str, An
     if fallback_reason:
         return {
             "method": "full-fallback",
-            "targets": [tests_dir],          # run the whole suite
+            "targets": list(tests_dirs),     # run the whole suite
             "by_source": by_source,
             "unmapped": unmapped,
             "confidence": "low",

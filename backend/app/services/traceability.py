@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 import git
 
@@ -52,8 +52,10 @@ def _module_level_markers(tree: ast.Module) -> Dict[str, str]:
     return result
 
 
-def extract_test_markers(repo_path: str, target_commit: str, tests_dir: str = "tests") -> Dict[str, Dict[str, str]]:
+def extract_test_markers(repo_path: str, target_commit: str, tests_dirs: Union[str, List[str]] = "tests") -> Dict[str, Dict[str, str]]:
     """Return ``{ test_nodeid: {req, level, asil} }`` read from the AST."""
+    if isinstance(tests_dirs, str):
+        tests_dirs = [tests_dirs]
     repo = git.Repo(repo_path)
     commit = repo.commit(target_commit)
     result: Dict[str, Dict[str, str]] = {}
@@ -62,7 +64,7 @@ def extract_test_markers(repo_path: str, target_commit: str, tests_dir: str = "t
         if blob.type != "blob":
             continue
         path = blob.path
-        if not (path.startswith(tests_dir) and path.endswith(".py")):
+        if not (any(path.startswith(d) for d in tests_dirs) and path.endswith(".py")):
             continue
         source = blob.data_stream.read().decode("utf-8", errors="ignore")
         try:

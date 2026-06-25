@@ -1,5 +1,6 @@
 import React from 'react';
 import { GitCommit, Search, ShieldCheck, Map } from 'lucide-react';
+import MultiDirInput from './MultiDirInput';
 
 export default function InputForm({ repoUrl, setRepoUrl, commitHash, setCommitHash, baseCommit, setBaseCommit, sourceDir, setSourceDir, testsDir, setTestsDir, handleAnalyze, handleQuickMap, isAnalyzing, githubToken }) {
   return (
@@ -47,25 +48,21 @@ export default function InputForm({ repoUrl, setRepoUrl, commitHash, setCommitHa
       </div>
 
       <div className="flex flex-col md:flex-row gap-4 items-end mt-4">
-        <div className="w-full md:w-48 space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500 ml-1">Source dir</label>
-          <input 
-            type="text" 
-            value={sourceDir}
-            onChange={(e) => setSourceDir(e.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all placeholder:text-zinc-700" 
-            placeholder="src/"
+        <div className="w-full md:flex-1 space-y-2">
+          <MultiDirInput
+            values={sourceDir}
+            onChange={setSourceDir}
+            label="Source dirs"
+            placeholder="e.g. src/"
           />
         </div>
 
-        <div className="w-full md:w-48 space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500 ml-1">Tests dir</label>
-          <input 
-            type="text" 
-            value={testsDir}
-            onChange={(e) => setTestsDir(e.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all placeholder:text-zinc-700" 
-            placeholder="tests"
+        <div className="w-full md:flex-1 space-y-2">
+          <MultiDirInput
+            values={testsDir}
+            onChange={setTestsDir}
+            label="Tests dirs"
+            placeholder="e.g. tests"
           />
         </div>
 
