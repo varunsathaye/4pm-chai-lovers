@@ -9,6 +9,7 @@ import Charts from './components/Dashboard/Charts';
 import DependencyTrace from './components/Dashboard/DependencyTrace';
 import RequirementsImpact from './components/Dashboard/RequirementsImpact';
 import MapResults from './components/Dashboard/MapResults';
+import Navbar from './components/Navbar';
 
 import GithubAuthGuard from './components/GithubAuthGuard';
 
@@ -37,6 +38,7 @@ export default function App() {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [githubToken, setGithubToken] = useState(null);
+  const [githubUser, setGithubUser] = useState(null);
   const [demoScenarios, setDemoScenarios] = useState(null);
 
   const loadingSteps = [
@@ -58,7 +60,23 @@ export default function App() {
   }, [isAnalyzing]);
 
   useEffect(() => {
+    const savedToken = localStorage.getItem('github_token');
+    const savedUser = localStorage.getItem('github_user');
+    if (savedToken) {
+      setGithubToken(savedToken);
+      if (savedUser) {
+        try { setGithubUser(JSON.parse(savedUser)); } catch { /* ignore */ }
+      }
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (isAuthenticated) {
+      const savedUser = localStorage.getItem('github_user');
+      if (savedUser) {
+        try { setGithubUser(JSON.parse(savedUser)); } catch { /* ignore */ }
+      }
       fetch(`${API_BASE}/api/analyze/demo/scenarios`)
         .then(r => r.json())
         .then(data => setDemoScenarios(data))
@@ -157,9 +175,20 @@ export default function App() {
   };
 
   return (
-    <GithubAuthGuard isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} onTokenReceived={setGithubToken}>
-      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-8 selection:bg-emerald-500/30">
-        <div className="max-w-7xl mx-auto space-y-6">
+    <GithubAuthGuard isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} onTokenReceived={(token) => {
+      setGithubToken(token);
+      localStorage.setItem('github_token', token);
+    }}>
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500/30">
+        <Navbar user={githubUser} isAuthenticated={isAuthenticated} onLogout={() => {
+          localStorage.removeItem('github_token');
+          localStorage.removeItem('github_user');
+          setGithubToken(null);
+          setGithubUser(null);
+          setIsAuthenticated(false);
+        }} />
+
+        <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
 
           <InputForm
             repoUrl={repoUrl} setRepoUrl={setRepoUrl}
@@ -235,7 +264,11 @@ export default function App() {
                 metrics={pipelineData.metrics}
               />
               <Charts metrics={pipelineData.metrics} />
-              <DependencyTrace dependency_trace={pipelineData.dependency_trace} />
+              <DependencyTrace
+                dependency_trace={pipelineData.dependency_trace}
+                all_test_files={pipelineData.analysis?.all_test_files}
+                selected_tests={pipelineData.analysis?.selected_tests}
+              />
             </div>
           )}
         </div>

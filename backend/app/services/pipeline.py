@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 
 import git
 
-from app.services import coverage_mapper, diff_analyzer, test_mapper, test_runner, traceability
+from app.services import coverage_mapper, diff_analyzer, test_mapper, test_runner, timing_service, traceability
 
     # Cache coverage maps per (repo, baseline commit) so repeated demos are fast.
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".tia_cache"
@@ -150,6 +150,9 @@ def run_analysis(
         markers = traceability.extract_test_markers(work_dir, target_sha, tests_dir)
         registry = traceability.load_requirements_registry(work_dir, target_sha)
 
+        # Collect all test files (used by the UI to show the full suite).
+        all_test_files = _collect_test_files(work_dir, target_sha, tests_dir)
+
         # 5. Execute against the TARGET revision (real pass/fail + timing).
         #    If the project has no Python test files (e.g. C++ repo) and we
         #    have no coverage map, skip pytest execution and return mapping
@@ -178,6 +181,19 @@ def run_analysis(
             full = {"total_tests": total_count, "duration_seconds": 0.0, "tests": list(mock_tests)}
             smart = {"total_tests": len(mock_tests), "duration_seconds": 0.0, "tests": list(mock_tests), "passed": True}
 
+        # Override duration values from tests/test_timings.json (if present)
+        # so the dashboard always shows realistic time-saved numbers, even
+        # when we skip actual execution for non-Python repos.
+        timings = timing_service.read_test_timings(work_dir, target_sha, tests_dir)
+        if timings:
+            tmetrics = timing_service.compute_timing_metrics(
+                timings,
+                [t["nodeid"] for t in smart["tests"]],
+                full["total_tests"],
+            )
+            full["duration_seconds"] = tmetrics["standard_run_time_seconds"]
+            smart["duration_seconds"] = tmetrics["smart_run_time_seconds"]
+
         trace_block = traceability.build_traceability(
             markers, registry, [t["nodeid"] for t in smart["tests"]]
         )
@@ -191,6 +207,7 @@ def run_analysis(
             smart=smart,
             markers=markers,
             trace_block=trace_block,
+            all_test_files=all_test_files,
         )
     finally:
         repo.close()
@@ -243,7 +260,7 @@ def _select(cov_map, diff_data, work_dir, target_sha, tests_dir) -> Dict[str, An
 
 
 def _build_payload(commit_obj, base_sha, diff_data, selection, full, smart,
-                   markers, trace_block) -> Dict[str, Any]:
+                   markers, trace_block, all_test_files=None) -> Dict[str, Any]:
     total = full["total_tests"]
     executed = smart["total_tests"]
     skipped = max(total - executed, 0)
@@ -326,6 +343,7 @@ def _build_payload(commit_obj, base_sha, diff_data, selection, full, smart,
             "impacted_functions": sorted(set(impacted_functions)),
             "selected_tests": [t["nodeid"] for t in smart["tests"]],
             "all_selected_passed": all_passed,
+            "all_test_files": sorted(all_test_files) if all_test_files else [],
         },
         "traceability": trace_block,
         "dependency_trace": dependency_trace,

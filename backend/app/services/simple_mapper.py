@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import git
 
-from app.services import diff_analyzer, test_mapper
+from app.services import diff_analyzer, test_mapper, timing_service
 
 
 def map_impact(
@@ -47,6 +47,26 @@ def map_impact(
             diff_data, work_dir, target_sha, tests_dir_prefix=tests_dir
         )
 
+        # Collect all test files in the repo for the full-suite overview.
+        try:
+            all_paths = repo.git.ls_tree("-r", "--name-only", target_sha).splitlines()
+        except git.exc.GitCommandError:
+            all_paths = []
+        all_test_files = sorted(
+            p for p in all_paths
+            if p.startswith(tests_dir) and p.split(".")[-1].lower()
+            in {"py", "c", "cc", "cpp", "cxx", "h", "hpp", "hxx", "js", "ts",
+                "jsx", "tsx", "java", "kt", "go", "rs", "rb", "swift", "sh", "bash"}
+        )
+
+        # Read test timings from tests/test_timings.json (if present).
+        timings = timing_service.read_test_timings(work_dir, target_sha, tests_dir)
+        timing_metrics = timing_service.compute_timing_metrics(
+            timings,
+            mapping["selected_test_files"],
+            len(mapping["selected_test_files"]),
+        )
+
         all_modified = [i["file"] for i in impacted_items]
         all_functions = []
         for i in impacted_items:
@@ -69,6 +89,8 @@ def map_impact(
                 "by_source": mapping["by_source"],
                 "total_impacted_test_files": len(mapping["selected_test_files"]),
             },
+            "all_test_files": all_test_files,
+            "timing": timing_metrics,
             "source_dir": source_dir,
             "tests_dir": tests_dir,
         }

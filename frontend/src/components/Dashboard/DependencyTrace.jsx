@@ -1,7 +1,51 @@
 import React from 'react';
-import { FileCode2, LayoutDashboard, CheckCircle2, ServerCrash, Clock } from 'lucide-react';
+import { FileCode2, LayoutDashboard, CheckCircle2, ServerCrash, Clock, Beaker } from 'lucide-react';
 
-export default function DependencyTrace({ dependency_trace }) {
+function AllTestsOverview({ allTestFiles, selectedTests }) {
+  if (!allTestFiles || allTestFiles.length === 0) return null;
+
+  const selectedSet = new Set(selectedTests || []);
+  const selectedCount = [...selectedSet].filter(t => allTestFiles.includes(t)).length;
+
+  return (
+    <div className="mb-8 bg-zinc-800/20 rounded-xl border border-zinc-800/50 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Beaker className="h-4 w-4 text-zinc-400" />
+          <span className="text-sm font-semibold text-zinc-300">All Test Files</span>
+        </div>
+        <span className="text-xs text-zinc-500 bg-zinc-800/60 px-2.5 py-1 rounded-full">
+          {selectedCount} / {allTestFiles.length} selected
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {allTestFiles.map((tf) => {
+          const isSelected = selectedSet.has(tf);
+          return (
+            <div
+              key={tf}
+              className={`group relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono transition-all ${
+                isSelected
+                  ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 shadow-sm shadow-emerald-500/10'
+                  : 'bg-zinc-900/60 border border-zinc-800 text-zinc-600'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-400' : 'bg-zinc-700'}`} />
+              {tf}
+              {isSelected && (
+                <span className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-emerald-500 rounded-full flex items-center justify-center">
+                  <CheckCircle2 className="w-2.5 h-2.5 text-white" />
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default function DependencyTrace({ dependency_trace, all_test_files, selected_tests }) {
   return (
     <div className="bg-zinc-900/50 rounded-2xl border border-zinc-800 overflow-hidden shadow-sm">
       <div className="p-6 border-b border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -14,6 +58,8 @@ export default function DependencyTrace({ dependency_trace }) {
       </div>
       
       <div className="p-6 md:p-8">
+        <AllTestsOverview allTestFiles={all_test_files} selectedTests={selected_tests} />
+
         {dependency_trace.map((trace, idx) => (
           <div key={idx} className="mb-8 last:mb-0">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6 bg-zinc-800/40 p-4 md:p-5 rounded-xl border border-zinc-700/50">

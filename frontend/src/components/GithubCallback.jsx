@@ -59,6 +59,22 @@ export default function GithubCallback({ setIsAuthenticated, onTokenReceived }) 
                     onTokenReceived(accessToken);
                 }
 
+                setStatus("> Fetching GitHub profile...");
+                try {
+                    const userRes = await fetch('https://api.github.com/user', {
+                        headers: { Authorization: `Bearer ${accessToken}` }
+                    });
+                    if (userRes.ok) {
+                        const userData = await userRes.json();
+                        localStorage.setItem('github_user', JSON.stringify({
+                            login: userData.login,
+                            avatar_url: userData.avatar_url,
+                        }));
+                    }
+                } catch {
+                    // Non-critical — profile just won't show
+                }
+
                 await new Promise(res => setTimeout(res, 600));
                 setStatus("> Synchronizing pipeline access capabilities...");
 
