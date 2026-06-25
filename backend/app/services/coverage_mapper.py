@@ -139,10 +139,11 @@ def build_coverage_map(repo_dir: str, source_dir: str = "src", tests_dir: str = 
                 if nodeid and "::" in nodeid:
                     bucket.add(nodeid)
 
+    has_data = bool(by_function) or bool(covered_files)
     return {
         "by_function": {k: sorted(v) for k, v in by_function.items()},
         "covered_files": sorted(covered_files),
-        "ok": True,
+        "ok": has_data,
     }
 
 

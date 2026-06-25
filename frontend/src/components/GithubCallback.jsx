@@ -1,23 +1,21 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Terminal } from 'lucide-react';
 
-export default function GithubCallback({ setIsAuthenticated }) {
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+
+export default function GithubCallback({ setIsAuthenticated, onTokenReceived }) {
     const [status, setStatus] = useState("> Initializing OAuth 2.0 callback handler...");
     const [isError, setIsError] = useState(false);
 
-    // 1. ADD THIS: The lock to prevent double-firing
     const hasFetched = useRef(false);
 
     useEffect(() => {
         const authenticate = async () => {
-            // 2. ADD THIS: If we already fired the request, stop immediately!
             if (hasFetched.current) return;
 
-            // Inside GithubCallback.jsx -> authenticate()
             const params = new URLSearchParams(window.location.search);
             const code = params.get('code');
 
-            // ADD THIS: Check if GitHub sent back an explicit error
             const githubError = params.get('error');
             const errorDescription = params.get('error_description');
 
@@ -33,7 +31,6 @@ export default function GithubCallback({ setIsAuthenticated }) {
                 return;
             }
 
-            // 3. ADD THIS: Lock the gate so the second React render can't pass
             hasFetched.current = true;
 
             try {
@@ -42,7 +39,7 @@ export default function GithubCallback({ setIsAuthenticated }) {
                 await new Promise(res => setTimeout(res, 800));
                 setStatus("> Exchanging authorization code for secure access token...");
 
-                const response = await fetch('http://localhost:8000/api/auth/github', {
+                const response = await fetch(`${API_BASE}/api/auth/github`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -55,6 +52,29 @@ export default function GithubCallback({ setIsAuthenticated }) {
                     throw new Error(errorPayload.detail || `Server returned status ${response.status}`);
                 }
 
+                const data = await response.json();
+                const accessToken = data.access_token;
+
+                if (onTokenReceived) {
+                    onTokenReceived(accessToken);
+                }
+
+                setStatus("> Fetching GitHub profile...");
+                try {
+                    const userRes = await fetch('https://api.github.com/user', {
+                        headers: { Authorization: `Bearer ${accessToken}` }
+                    });
+                    if (userRes.ok) {
+                        const userData = await userRes.json();
+                        localStorage.setItem('github_user', JSON.stringify({
+                            login: userData.login,
+                            avatar_url: userData.avatar_url,
+                        }));
+                    }
+                } catch {
+                    // Non-critical — profile just won't show
+                }
+
                 await new Promise(res => setTimeout(res, 600));
                 setStatus("> Synchronizing pipeline access capabilities...");
 
@@ -63,7 +83,6 @@ export default function GithubCallback({ setIsAuthenticated }) {
 
                 setTimeout(() => {
                     setIsAuthenticated(true);
-                    // FIX: Reset the path back to the root '/' so the callback unmounts permanently
                     window.history.replaceState({}, document.title, '/');
                 }, 1200);
 
@@ -75,7 +94,7 @@ export default function GithubCallback({ setIsAuthenticated }) {
         };
 
         authenticate();
-    }, [setIsAuthenticated]);
+    }, [setIsAuthenticated, onTokenReceived]);
 
     return (
         <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 w-full font-sans">

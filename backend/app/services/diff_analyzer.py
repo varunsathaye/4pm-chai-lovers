@@ -5,21 +5,45 @@ For Python files we parse the real Abstract Syntax Tree of the *target*
 revision and map each changed line to its innermost enclosing function or
 method. For other languages we fall back to a lightweight regex scan so the
 engine still produces a useful answer on arbitrary repositories.
+
+Cross-file call-chain analysis
+-------------------------------
+After identifying directly changed functions the module scans every source
+file under *target_dir* looking for call sites (*i.e.* ``fun_name(``) that
+reference a changed function.  Those calling files are added as "indirect"
+entries (``change_type: "I"``) so the test mapper also selects tests for
+the downstream callers.
 """
 from __future__ import annotations
 
 import ast
+import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set
 
 import git
 
 # Non-function keywords that must never be reported as a "changed function"
 # in the regex fallback path.
+# NOTE: Only logical / control-flow keywords go here -- primitive type
+# names (int, float, void, ...) are deliberately excluded because they
+# legitimately appear as the first word of a function definition line
+# (e.g. "float compute_soc(...)").
 IGNORE_KEYWORDS = {
     "if", "for", "while", "switch", "catch", "else", "return",
     "public:", "private:", "protected:", "class", "struct", "namespace",
     "ESP_LOG", "Serial", "printf", "cout", "cin", "print",
+    # C++ / common-language non-type keywords
+    "template", "typename", "constexpr", "const_cast",
+    "static_cast", "dynamic_cast", "reinterpret_cast", "sizeof",
+    "typeid", "decltype", "throw", "new", "delete",
+    "using", "typedef", "extern", "mutable",
+    "explicit", "export", "friend",
+    "nullptr", "true", "false", "this", "operator",
+    # Python / script keywords that never start a function def
+    "def", "import", "from", "async", "await", "lambda",
+    "yield", "raise", "except", "finally", "with", "assert",
+    "del", "pass", "break", "continue", "try",
 }
 
 
@@ -87,21 +111,122 @@ def _python_impacted_functions(source: str, changed_lines: List[int]) -> List[st
 
 def _regex_impacted_functions(file_lines: List[str], changed_lines: List[int]) -> List[str]:
     impacted: set[str] = set()
-    sig_re = re.compile(r"\b([a-zA-Z_]\w*)\s*\([^)]*\)\s*\{?\s*$")
+    # Matches C/C++/Java/JS/etc function signatures:
+    #   func_name(params)
+    #   func_name(params) override { ... }
+    #   func_name(params) const noexcept(true) { ... }
+    #   ReturnType ClassName::func_name(params) { ... }
+    #   def func_name(params):        (Python)
+    # The named group captures only the plain function name.
+    sig_re = re.compile(
+        r"\b([a-zA-Z_]\w*)\s*"
+        r"\([^)]*\)\s*"
+        r"(?:\w+(?:\s*\([^)]*\))?\s*)*"
+        r"[{:]{0,1}\s*$"
+    )
     for line in changed_lines:
         idx = min(line - 1, len(file_lines) - 1)
         for i in range(idx, -1, -1):
             text = file_lines[i].strip()
-            if not text or text.startswith(("//", "#")) or text.endswith(";"):
+            if not text:
                 continue
-            first = re.match(r"^([a-zA-Z_]\w*)", text)
-            if first and first.group(1) in IGNORE_KEYWORDS:
+            # Strip inline comments so a line like
+            #   "V_MAX = 4.2  # fully charged cell voltage (V)"
+            # does not falsely match "voltage".
+            code = re.split(r"\s*(?:#|//)", text, maxsplit=1)[0].strip()
+            if not code:
                 continue
-            m = sig_re.search(text)
+            if re.match(r"^[.\->:]", code):
+                continue
+            m = sig_re.search(code)
             if m and m.group(1) not in IGNORE_KEYWORDS:
                 impacted.add(m.group(1))
                 break
     return sorted(impacted)
+
+
+def _find_enclosing_func_name(file_lines: List[str], line_no: int) -> Optional[str]:
+    """Walk backwards from *line_no* to find the enclosing function definition."""
+    sig_re = re.compile(
+        r"\b([a-zA-Z_]\w*)\s*"
+        r"\([^)]*\)\s*"
+        r"(?:\w+(?:\s*\([^)]*\))?\s*)*"
+        r"[{:]{0,1}\s*$"  # { (C++ body) or : (Python def)
+    )
+    for i in range(min(line_no, len(file_lines)) - 1, -1, -1):
+        text = file_lines[i].strip()
+        if not text:
+            continue
+        # Strip inline comments so "voltage (V)" inside a #-comment is ignored.
+        code = re.split(r"\s*(?:#|//)", text, maxsplit=1)[0].strip()
+        if not code or re.match(r"^[.\->:]", code):
+            continue
+        m = sig_re.search(code)
+        if m and m.group(1) not in IGNORE_KEYWORDS:
+            return m.group(1)
+    return None
+
+
+def _find_cross_file_callers(
+    repo: git.Repo,
+    commit: Any,
+    target_dir: str,
+    added_or_modified: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Return entries for source files that call functions changed in
+    *added_or_modified*.
+
+    Each returned entry has ``change_type: "I"`` (indirect) and lists the
+    *caller-side* function name(s) that contain the call site.
+    """
+    # Collect all changed function names.
+    changed_fns: Dict[str, List[str]] = {}
+    for item in added_or_modified:
+        for fn in item.get("impacted_functions", []):
+            changed_fns.setdefault(fn, []).append(item["file"])
+
+    if not changed_fns:
+        return []
+
+    norm_dir = target_dir.rstrip("/") if target_dir not in (".", "./", "") else ""
+    changed_paths: Set[str] = {item["file"] for item in added_or_modified}
+    indirect: List[Dict[str, Any]] = []
+
+    for blob in commit.tree.traverse():
+        if blob.type != "blob":
+            continue
+        path: str = blob.path
+        if not path.startswith(norm_dir) or path in changed_paths:
+            continue
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini", ".png", ".jpg", ".svg", ".ico"):
+            continue
+
+        try:
+            content = blob.data_stream.read().decode("utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        file_lines = content.split("\n")
+        caller_fns: Set[str] = set()
+
+        for fn_name in changed_fns:
+            # One match per function per file is sufficient.
+            for i, line in enumerate(file_lines, 1):
+                if re.search(r"\b" + re.escape(fn_name) + r"\s*\(", line):
+                    enclosing = _find_enclosing_func_name(file_lines, i)
+                    if enclosing and enclosing != fn_name:
+                        caller_fns.add(enclosing)
+                    break
+
+        if caller_fns:
+            indirect.append({
+                "file": path,
+                "change_type": "I",
+                "impacted_functions": sorted(caller_fns),
+            })
+
+    return indirect
 
 
 def get_impacted_files(
@@ -168,5 +293,12 @@ def get_impacted_files(
             result["deleted"].append(a_path)
         elif change_type == "R":
             result["renamed"].append({"old_path": a_path, "new_path": b_path})
+
+    # Cross-file caller analysis: find files that call changed functions.
+    if result["added_or_modified"]:
+        cross_callers = _find_cross_file_callers(
+            repo, commit_b, target_dir, result["added_or_modified"]
+        )
+        result["added_or_modified"].extend(cross_callers)
 
     return result
