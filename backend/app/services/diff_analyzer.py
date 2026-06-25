@@ -178,55 +178,73 @@ def _find_cross_file_callers(
 
     Each returned entry has ``change_type: "I"`` (indirect) and lists the
     *caller-side* function name(s) that contain the call site.
-    """
-    # Collect all changed function names.
-    changed_fns: Dict[str, List[str]] = {}
-    for item in added_or_modified:
-        for fn in item.get("impacted_functions", []):
-            changed_fns.setdefault(fn, []).append(item["file"])
 
-    if not changed_fns:
+    The search is **transitive**: if ``A`` (changed) is called by ``B``, and
+    ``B`` is called by ``C``, both ``B`` and ``C`` are reported. This gives
+    languages without a runtime coverage map (C/C++, etc.) a static
+    approximation of the deep dependency chains that coverage catches for free.
+
+    To keep the Python (coverage-based) path's behaviour identical, recursion
+    only follows **non-Python** callers — Python changes still get a single
+    level here and rely on the coverage map for true transitivity.
+    """
+    # Initial frontier = the directly changed function names.
+    frontier: Set[str] = set()
+    for item in added_or_modified:
+        frontier.update(item.get("impacted_functions", []))
+
+    if not frontier:
         return []
 
     norm_dir = target_dir.rstrip("/") if target_dir not in (".", "./", "") else ""
     changed_paths: Set[str] = {item["file"] for item in added_or_modified}
-    indirect: List[Dict[str, Any]] = []
 
+    # Read every candidate source file once (path -> lines), so the transitive
+    # walk just re-scans this in-memory set instead of re-reading git blobs.
+    _skip_ext = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".cfg",
+                 ".ini", ".png", ".jpg", ".svg", ".ico"}
+    files: Dict[str, List[str]] = {}
     for blob in commit.tree.traverse():
         if blob.type != "blob":
             continue
-        path: str = blob.path
+        path = blob.path
         if not path.startswith(norm_dir) or path in changed_paths:
             continue
-        ext = os.path.splitext(path)[1].lower()
-        if ext in (".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini", ".png", ".jpg", ".svg", ".ico"):
+        if os.path.splitext(path)[1].lower() in _skip_ext:
             continue
-
         try:
             content = blob.data_stream.read().decode("utf-8", errors="ignore")
         except Exception:
             continue
+        files[path] = content.split("\n")
 
-        file_lines = content.split("\n")
-        caller_fns: Set[str] = set()
+    indirect_map: Dict[str, Set[str]] = {}
+    seen_funcs: Set[str] = set(frontier)
 
-        for fn_name in changed_fns:
-            # One match per function per file is sufficient.
-            for i, line in enumerate(file_lines, 1):
-                if re.search(r"\b" + re.escape(fn_name) + r"\s*\(", line):
-                    enclosing = _find_enclosing_func_name(file_lines, i)
-                    if enclosing and enclosing != fn_name:
-                        caller_fns.add(enclosing)
-                    break
+    # Fixpoint: expand callers until no new (non-Python) caller is discovered.
+    while frontier:
+        next_frontier: Set[str] = set()
+        for path, file_lines in files.items():
+            is_py = path.endswith(".py")
+            for fn_name in frontier:
+                # One match per function per file is sufficient.
+                for i, line in enumerate(file_lines, 1):
+                    if re.search(r"\b" + re.escape(fn_name) + r"\s*\(", line):
+                        enclosing = _find_enclosing_func_name(file_lines, i)
+                        if enclosing and enclosing != fn_name:
+                            indirect_map.setdefault(path, set()).add(enclosing)
+                            # Only recurse through non-Python callers so the
+                            # Python coverage path stays at a single level.
+                            if not is_py and enclosing not in seen_funcs:
+                                seen_funcs.add(enclosing)
+                                next_frontier.add(enclosing)
+                        break
+        frontier = next_frontier
 
-        if caller_fns:
-            indirect.append({
-                "file": path,
-                "change_type": "I",
-                "impacted_functions": sorted(caller_fns),
-            })
-
-    return indirect
+    return [
+        {"file": path, "change_type": "I", "impacted_functions": sorted(fns)}
+        for path, fns in indirect_map.items()
+    ]
 
 
 def get_impacted_files(
