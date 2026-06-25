@@ -1,3 +1,27 @@
-.vscode
-venv
+# --- Python ---
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# --- Node ---
+node_modules/
+dist/
+dist-ssr/
+
+# --- Environment files (templates stay tracked) ---
 .env
+.env.local
+.env.*.local
+!.env.example
+
+# --- Editor ---
+.vscode/
+.idea/
+
+# --- Generated / build artifacts ---
+*.pptx
+~$*.pptx
+backend/.demo_repo/
+backend/.tia_cache/
+.pytest_cache/

@@ -4,10 +4,12 @@ from app.api import analyze, auth
 
 app = FastAPI(title="SmartTIA Engine API")
 
-# Configure CORS to allow requests from the Vite frontend default port
+# Configure CORS for the Vite frontend. Vite auto-increments the port
+# (5173 -> 5174 -> ...) when one is taken, so allow any localhost port
+# instead of pinning a single one (avoids "Failed to fetch" CORS errors).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
