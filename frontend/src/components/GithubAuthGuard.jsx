@@ -5,15 +5,15 @@ import GithubCallback from './GithubCallback'; // 1. IMPORT THIS
  * GithubAuthGuard 
  * Acts as a layout wrapper and a mini-router. 
  */
-export default function GithubAuthGuard({ isAuthenticated, setIsAuthenticated, children }) {
+export default function GithubAuthGuard({ isAuthenticated, setIsAuthenticated, onTokenReceived, children }) {
   const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID || 'YOUR_CLIENT_ID';
-  const redirectUri = encodeURIComponent('http://localhost:5173/auth/callback');
+  const redirectUri = encodeURIComponent(`${window.location.origin}/auth/callback`);
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${redirectUri}&scope=repo`;
 
   // 2. THE FIX: Intercept the URL path!
   // If GitHub just sent us back here, render the terminal handshake screen.
   if (window.location.pathname === '/auth/callback') {
-    return <GithubCallback setIsAuthenticated={setIsAuthenticated} />;
+    return <GithubCallback setIsAuthenticated={setIsAuthenticated} onTokenReceived={onTokenReceived} />;
   }
 
   // Render the protected dashboard if authenticated
@@ -37,13 +37,20 @@ export default function GithubAuthGuard({ isAuthenticated, setIsAuthenticated, c
           Authorize SmartTIA to read your Git history and codebase. We use this to map abstract syntax trees and compute execution routes instantly.
         </p>
         
-        <a 
+        <a
           href={githubAuthUrl}
           className="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3.5 rounded-xl font-semibold transition-all shadow-[0_0_20px_-5px_theme(colors.emerald.500)] flex items-center justify-center gap-2"
         >
           Connect with GitHub
         </a>
-        
+
+        <button
+          onClick={() => setIsAuthenticated(true)}
+          className="mt-4 text-sm text-slate-400 hover:text-emerald-400 transition-colors font-medium"
+        >
+          Continue in demo mode &rarr;
+        </button>
+
         <p className="mt-6 text-xs text-slate-600 font-medium uppercase tracking-wider">
           One-Shot Execution &bull; No Data Stored
         </p>

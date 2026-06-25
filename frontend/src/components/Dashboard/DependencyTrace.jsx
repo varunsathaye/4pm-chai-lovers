@@ -36,13 +36,26 @@ export default function DependencyTrace({ dependency_trace }) {
                   <div key={tidx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 md:px-6 rounded-xl bg-zinc-950 border border-zinc-800/80 sm:ml-6 group hover:border-zinc-600 transition-all hover:bg-zinc-900 relative">
                     <div className="hidden sm:block absolute -left-6 top-1/2 w-6 border-t-[2px] border-dashed border-zinc-700 pointer-events-none"></div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       {test.status === 'passed' ? (
                         <CheckCircle2 className="h-5 w-5 text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" />
                       ) : (
                         <ServerCrash className="h-5 w-5 text-red-500" />
                       )}
                       <span className="text-[15px] font-mono text-zinc-300 group-hover:text-zinc-50 tracking-tight transition-colors">{test.test_name}</span>
+                      {test.level && (
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
+                          test.level === 'HIL' ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                          : test.level === 'SIL' ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                          : 'bg-zinc-700/40 text-zinc-400 border-zinc-700'
+                        }`}>{test.level}</span>
+                      )}
+                      {test.requirement && (
+                        <span className="text-[10px] font-mono text-indigo-300/90 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded">{test.requirement}</span>
+                      )}
+                      {test.asil && test.asil !== 'QM' && (
+                        <span className="text-[10px] font-bold text-orange-300 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded">ASIL {test.asil}</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-4 text-sm">
                       <span className={`${test.status === 'passed' ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20' : 'text-red-400 bg-red-400/10 border border-red-500/30'} px-3 py-1 rounded-md capitalize font-semibold shadow-sm`}>
