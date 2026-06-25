@@ -16,10 +16,21 @@ import git
 
 # Non-function keywords that must never be reported as a "changed function"
 # in the regex fallback path.
+# NOTE: Only logical / control-flow keywords go here -- primitive type
+# names (int, float, void, ...) are deliberately excluded because they
+# legitimately appear as the first word of a function definition line
+# (e.g. "float compute_soc(...)").
 IGNORE_KEYWORDS = {
     "if", "for", "while", "switch", "catch", "else", "return",
     "public:", "private:", "protected:", "class", "struct", "namespace",
     "ESP_LOG", "Serial", "printf", "cout", "cin", "print",
+    # C++ / common-language non-type keywords
+    "template", "typename", "constexpr", "const_cast",
+    "static_cast", "dynamic_cast", "reinterpret_cast", "sizeof",
+    "typeid", "decltype", "throw", "new", "delete",
+    "using", "typedef", "extern", "mutable",
+    "explicit", "export", "friend",
+    "nullptr", "true", "false", "this", "operator",
 }
 
 
@@ -87,7 +98,18 @@ def _python_impacted_functions(source: str, changed_lines: List[int]) -> List[st
 
 def _regex_impacted_functions(file_lines: List[str], changed_lines: List[int]) -> List[str]:
     impacted: set[str] = set()
-    sig_re = re.compile(r"\b([a-zA-Z_]\w*)\s*\([^)]*\)\s*\{?\s*$")
+    # Matches C/C++/Java/JS/etc function signatures:
+    #   func_name(params)
+    #   func_name(params) override { ... }
+    #   func_name(params) const noexcept(true) { ... }
+    #   ReturnType ClassName::func_name(params) { ... }
+    # The named group captures only the plain function name.
+    sig_re = re.compile(
+        r"\b([a-zA-Z_]\w*)\s*"
+        r"\([^)]*\)\s*"
+        r"(?:\w+(?:\s*\([^)]*\))?\s*)*"
+        r"\{?\s*$"
+    )
     for line in changed_lines:
         idx = min(line - 1, len(file_lines) - 1)
         for i in range(idx, -1, -1):
@@ -96,6 +118,9 @@ def _regex_impacted_functions(file_lines: List[str], changed_lines: List[int]) -
                 continue
             first = re.match(r"^([a-zA-Z_]\w*)", text)
             if first and first.group(1) in IGNORE_KEYWORDS:
+                continue
+            # Skip common non-definition patterns
+            if text.startswith((".", "->", "::")):
                 continue
             m = sig_re.search(text)
             if m and m.group(1) not in IGNORE_KEYWORDS:

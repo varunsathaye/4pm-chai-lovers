@@ -7,7 +7,7 @@ export default function LoadingState({ loadingSteps, loadingStep }) {
       <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
         <div className="bg-zinc-900 border-b border-zinc-800 px-4 py-3 flex items-center gap-2">
           <Terminal className="h-4 w-4 text-zinc-400" />
-          <span className="text-xs text-zinc-500 font-mono">SmartTIA Engine v1.0</span>
+          <span className="text-xs text-zinc-500 font-mono">SmartTIA Engine</span>
         </div>
         <div className="p-6 font-mono text-sm space-y-3">
           {loadingSteps.map((step, idx) => (

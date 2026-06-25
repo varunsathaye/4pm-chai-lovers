@@ -71,7 +71,7 @@ export default function RequirementsImpact({ analysis, traceability, metrics }) 
 
         {analysis.fallback_reason && (
           <div className="text-sm text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-            <span className="font-semibold">Safety net engaged:</span> {analysis.fallback_reason} The full suite was run so no defect can slip through.
+            <span className="font-semibold">Safety net engaged:</span> {analysis.fallback_reason}
           </div>
         )}
 

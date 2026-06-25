@@ -5,15 +5,15 @@ import GithubCallback from './GithubCallback'; // 1. IMPORT THIS
  * GithubAuthGuard 
  * Acts as a layout wrapper and a mini-router. 
  */
-export default function GithubAuthGuard({ isAuthenticated, setIsAuthenticated, children }) {
+export default function GithubAuthGuard({ isAuthenticated, setIsAuthenticated, onTokenReceived, children }) {
   const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID || 'YOUR_CLIENT_ID';
-  const redirectUri = encodeURIComponent('http://localhost:5173/auth/callback');
+  const redirectUri = encodeURIComponent(`${window.location.origin}/auth/callback`);
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${redirectUri}&scope=repo`;
 
   // 2. THE FIX: Intercept the URL path!
   // If GitHub just sent us back here, render the terminal handshake screen.
   if (window.location.pathname === '/auth/callback') {
-    return <GithubCallback setIsAuthenticated={setIsAuthenticated} />;
+    return <GithubCallback setIsAuthenticated={setIsAuthenticated} onTokenReceived={onTokenReceived} />;
   }
 
   // Render the protected dashboard if authenticated

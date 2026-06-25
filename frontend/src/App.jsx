@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, ShieldAlert, AlertTriangle, CheckCircle2, GitMerge, LifeBuoy } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import InputForm from './components/InputForm';
 import EmptyState from './components/EmptyState';
 import LoadingState from './components/LoadingState';
@@ -8,22 +8,36 @@ import KPIs from './components/Dashboard/KPIs';
 import Charts from './components/Dashboard/Charts';
 import DependencyTrace from './components/Dashboard/DependencyTrace';
 import RequirementsImpact from './components/Dashboard/RequirementsImpact';
+import MapResults from './components/Dashboard/MapResults';
 
 import GithubAuthGuard from './components/GithubAuthGuard';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
+const DEMO_COLORS = [
+  { bg: 'bg-emerald-600/90 hover:bg-emerald-500' },
+  { bg: 'bg-rose-600/90 hover:bg-rose-500' },
+  { bg: 'bg-fuchsia-600/90 hover:bg-fuchsia-500' },
+  { bg: 'bg-amber-600/90 hover:bg-amber-500' },
+];
+
 export default function App() {
   const [repoUrl, setRepoUrl] = useState('');
   const [commitHash, setCommitHash] = useState('');
+  const [baseCommit, setBaseCommit] = useState('');
+  const [sourceDir, setSourceDir] = useState('src/');
+  const [testsDir, setTestsDir] = useState('tests');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasResults, setHasResults] = useState(false);
   const [pipelineData, setPipelineData] = useState(null);
+  const [mapData, setMapData] = useState(null);
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState(null);
 
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [githubToken, setGithubToken] = useState(null);
+  const [demoScenarios, setDemoScenarios] = useState(null);
 
   const loadingSteps = [
     "> Cloning repository...",
@@ -43,10 +57,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isAnalyzing]);
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetch(`${API_BASE}/api/analyze/demo/scenarios`)
+        .then(r => r.json())
+        .then(data => setDemoScenarios(data))
+        .catch(() => {});
+    }
+  }, [isAuthenticated]);
+
   const startRun = () => {
     setIsAnalyzing(true);
     setHasResults(false);
     setPipelineData(null);
+    setMapData(null);
     setError(null);
     setLoadingStep(0);
   };
@@ -78,11 +102,45 @@ export default function App() {
     if (!repoUrl.trim() || !commitHash.trim()) return;
     startRun();
     try {
-      const data = await callApi('/api/analyze', {
+      const body = {
         repo_url: repoUrl.trim(),
         target_commit: commitHash.trim(),
-      });
+        target_dir: sourceDir.trim() || 'src/',
+        tests_dir: testsDir.trim() || 'tests',
+      };
+      if (baseCommit.trim()) {
+        body.base_commit = baseCommit.trim();
+      }
+      if (githubToken) {
+        body.github_token = githubToken;
+      }
+      const data = await callApi('/api/analyze', body);
       finishRun(data);
+    } catch (err) {
+      failRun(err.message);
+    }
+  };
+
+  const handleQuickMap = async () => {
+    if (!repoUrl.trim() || !commitHash.trim()) return;
+    startRun();
+    try {
+      const body = {
+        repo_url: repoUrl.trim(),
+        target_commit: commitHash.trim(),
+        source_dir: sourceDir.trim() || 'src/',
+        tests_dir: testsDir.trim() || 'tests',
+      };
+      if (baseCommit.trim()) {
+        body.base_commit = baseCommit.trim();
+      }
+      if (githubToken) {
+        body.github_token = githubToken;
+      }
+      const data = await callApi('/api/analyze/map', body);
+      setHasResults(true);
+      setMapData(data);
+      setIsAnalyzing(false);
     } catch (err) {
       failRun(err.message);
     }
@@ -99,52 +157,42 @@ export default function App() {
   };
 
   return (
-    <GithubAuthGuard isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated}>
+    <GithubAuthGuard isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} onTokenReceived={setGithubToken}>
       <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-8 selection:bg-emerald-500/30">
         <div className="max-w-7xl mx-auto space-y-6">
 
           <InputForm
             repoUrl={repoUrl} setRepoUrl={setRepoUrl}
             commitHash={commitHash} setCommitHash={setCommitHash}
-            handleAnalyze={handleAnalyze} isAnalyzing={isAnalyzing}
+            baseCommit={baseCommit} setBaseCommit={setBaseCommit}
+            sourceDir={sourceDir} setSourceDir={setSourceDir}
+            testsDir={testsDir} setTestsDir={setTestsDir}
+            handleAnalyze={handleAnalyze}
+            handleQuickMap={handleQuickMap}
+            isAnalyzing={isAnalyzing}
+            githubToken={githubToken}
           />
 
           {/* Live demo bar -- runs against the bundled automotive ECU codebase */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-zinc-900/30 border border-zinc-800 rounded-2xl px-4 py-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              Live demo · Automotive ECU suite
-            </span>
-            <div className="flex flex-wrap gap-3 sm:ml-auto">
-              <button
-                onClick={() => runDemo('safe')}
-                disabled={isAnalyzing}
-                className="flex items-center gap-2 bg-emerald-600/90 hover:bg-emerald-500 text-white text-sm px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Zap className="h-4 w-4" /> Safe Refactor
-              </button>
-              <button
-                onClick={() => runDemo('regression')}
-                disabled={isAnalyzing}
-                className="flex items-center gap-2 bg-rose-600/90 hover:bg-rose-500 text-white text-sm px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ShieldAlert className="h-4 w-4" /> Inject Regression
-              </button>
-              <button
-                onClick={() => runDemo('transitive')}
-                disabled={isAnalyzing}
-                className="flex items-center gap-2 bg-fuchsia-600/90 hover:bg-fuchsia-500 text-white text-sm px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <GitMerge className="h-4 w-4" /> Hidden Bug
-              </button>
-              <button
-                onClick={() => runDemo('safety_net')}
-                disabled={isAnalyzing}
-                className="flex items-center gap-2 bg-amber-600/90 hover:bg-amber-500 text-white text-sm px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <LifeBuoy className="h-4 w-4" /> Safety Net
-              </button>
+          {demoScenarios && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-zinc-900/30 border border-zinc-800 rounded-2xl px-4 py-3">
+              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Live demo · Automotive ECU suite
+              </span>
+              <div className="flex flex-wrap gap-3 sm:ml-auto">
+                {Object.entries(demoScenarios).map(([key, sc], idx) => (
+                  <button
+                    key={key}
+                    onClick={() => runDemo(key)}
+                    disabled={isAnalyzing}
+                    className={`flex items-center gap-2 ${DEMO_COLORS[idx % DEMO_COLORS.length].bg} text-white text-sm px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {sc.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-3 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-2xl px-5 py-4">
@@ -160,6 +208,8 @@ export default function App() {
 
           {isAnalyzing && <LoadingState loadingSteps={loadingSteps} loadingStep={loadingStep} />}
 
+          {hasResults && mapData && <MapResults data={mapData} />}
+
           {hasResults && pipelineData && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
               {pipelineData.scenario && (
@@ -174,8 +224,6 @@ export default function App() {
                   <div className="text-sm">
                     <span className="font-semibold">{pipelineData.scenario.label}:</span>{' '}
                     {pipelineData.scenario.expectation}
-                    {!pipelineData.analysis?.all_selected_passed &&
-                      ' — the selected subset CAUGHT it. No relevant test was skipped.'}
                   </div>
                 </div>
               )}
