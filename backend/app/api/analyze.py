@@ -51,10 +51,20 @@ async def analyze(request: AnalyzeRequest):
 
 
 def _load_demo_config() -> dict:
-    """Load (or build on first use) the bundled demo repo commit metadata."""
+    """Load (or build on first use) the bundled demo repo commit metadata.
+    
+    Normalises legacy string values for ``target_dir`` / ``tests_dir`` to lists
+    for backward compatibility with cached commits.json from before the
+    multi-directory migration.
+    """
     if not COMMITS_FILE.exists():
         return build_demo_repo()
-    return json.loads(Path(COMMITS_FILE).read_text(encoding="utf-8"))
+    cfg = json.loads(Path(COMMITS_FILE).read_text(encoding="utf-8"))
+    if isinstance(cfg.get("target_dir"), str):
+        cfg["target_dir"] = [cfg["target_dir"]]
+    if isinstance(cfg.get("tests_dir"), str):
+        cfg["tests_dir"] = [cfg["tests_dir"]]
+    return cfg
 
 
 @router.post("/demo")

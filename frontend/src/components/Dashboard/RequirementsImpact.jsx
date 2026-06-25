@@ -21,6 +21,7 @@ function asilClass(asil) {
 
 export default function RequirementsImpact({ analysis, traceability, metrics }) {
   if (!analysis) return null;
+  if (!metrics?.hil_tests_total) return null;
   const method = METHOD_LABELS[analysis.selection_method] || METHOD_LABELS.coverage;
   const reqs = traceability?.impacted_requirements || [];
   const highestAsil = traceability?.highest_asil || 'QM';

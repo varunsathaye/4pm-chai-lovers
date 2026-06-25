@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import git
 
@@ -13,10 +13,14 @@ def map_impact(
     repo_source: str,
     target_commit: str,
     base_commit: Optional[str] = None,
-    source_dir: str = "src/",
-    tests_dir: str = "tests",
+    source_dir: List[str] = None,
+    tests_dir: List[str] = None,
     github_token: Optional[str] = None,
 ) -> Dict[str, Any]:
+    if source_dir is None:
+        source_dir = ["src/"]
+    if tests_dir is None:
+        tests_dir = ["tests"]
     work_dir = tempfile.mkdtemp(prefix="smarttia_map_")
     try:
         clone_url = repo_source
@@ -44,7 +48,7 @@ def map_impact(
 
         # Use the service-level AST-based test mapper
         mapping = test_mapper.map_tests(
-            diff_data, work_dir, target_sha, tests_dir_prefix=tests_dir
+            diff_data, work_dir, target_sha, tests_dir_prefixes=tests_dir
         )
 
         # Collect all test files in the repo for the full-suite overview.
@@ -52,11 +56,11 @@ def map_impact(
             all_paths = repo.git.ls_tree("-r", "--name-only", target_sha).splitlines()
         except git.exc.GitCommandError:
             all_paths = []
+        _test_ext = {"py", "c", "cc", "cpp", "cxx", "h", "hpp", "hxx", "js", "ts",
+                     "jsx", "tsx", "java", "kt", "go", "rs", "rb", "swift", "sh", "bash"}
         all_test_files = sorted(
             p for p in all_paths
-            if p.startswith(tests_dir) and p.split(".")[-1].lower()
-            in {"py", "c", "cc", "cpp", "cxx", "h", "hpp", "hxx", "js", "ts",
-                "jsx", "tsx", "java", "kt", "go", "rs", "rb", "swift", "sh", "bash"}
+            if any(p.startswith(d) for d in tests_dir) and p.split(".")[-1].lower() in _test_ext
         )
 
         # Read test timings from tests/test_timings.json (if present).

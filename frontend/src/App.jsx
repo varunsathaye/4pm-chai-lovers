@@ -26,8 +26,8 @@ export default function App() {
   const [repoUrl, setRepoUrl] = useState('');
   const [commitHash, setCommitHash] = useState('');
   const [baseCommit, setBaseCommit] = useState('');
-  const [sourceDir, setSourceDir] = useState('src/');
-  const [testsDir, setTestsDir] = useState('tests');
+  const [sourceDir, setSourceDir] = useState(['src/']);
+  const [testsDir, setTestsDir] = useState(['tests']);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasResults, setHasResults] = useState(false);
   const [pipelineData, setPipelineData] = useState(null);
@@ -123,8 +123,8 @@ export default function App() {
       const body = {
         repo_url: repoUrl.trim(),
         target_commit: commitHash.trim(),
-        target_dir: sourceDir.trim() || 'src/',
-        tests_dir: testsDir.trim() || 'tests',
+        target_dir: sourceDir.length ? sourceDir : ['src/'],
+        tests_dir: testsDir.length ? testsDir : ['tests'],
       };
       if (baseCommit.trim()) {
         body.base_commit = baseCommit.trim();
@@ -146,8 +146,8 @@ export default function App() {
       const body = {
         repo_url: repoUrl.trim(),
         target_commit: commitHash.trim(),
-        source_dir: sourceDir.trim() || 'src/',
-        tests_dir: testsDir.trim() || 'tests',
+        source_dir: sourceDir.length ? sourceDir : ['src/'],
+        tests_dir: testsDir.length ? testsDir : ['tests'],
       };
       if (baseCommit.trim()) {
         body.base_commit = baseCommit.trim();

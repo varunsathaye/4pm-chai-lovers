@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 import os
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Union
 
 import git
 
@@ -146,7 +146,7 @@ def map_tests(
     diff_data: Dict[str, Any],
     repo_path: str,
     target_commit: str,
-    tests_dir_prefix: str = "tests",
+    tests_dir_prefixes: Union[str, List[str]] = "tests",
 ) -> Dict[str, Any]:
     """Return mapping of impacted source files -> impacted test files.
 
@@ -157,6 +157,9 @@ def map_tests(
           "by_source": {"src/battery_management.py": ["tests/test_..."], ...},
         }
     """
+    if isinstance(tests_dir_prefixes, str):
+        tests_dir_prefixes = [tests_dir_prefixes]
+
     impacted_items = diff_data.get("added_or_modified", [])
     index = _impacted_index(impacted_items)
 
@@ -173,7 +176,7 @@ def map_tests(
         if blob.type != "blob":
             continue
         path = blob.path
-        if not (path.startswith(tests_dir_prefix) and _is_test_file(path)):
+        if not (any(path.startswith(d) for d in tests_dir_prefixes) and _is_test_file(path)):
             continue
 
         content = blob.data_stream.read().decode("utf-8", errors="ignore")

@@ -19,7 +19,7 @@ from __future__ import annotations
 import ast
 import os
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 
 import git
 
@@ -170,7 +170,7 @@ def _find_enclosing_func_name(file_lines: List[str], line_no: int) -> Optional[s
 def _find_cross_file_callers(
     repo: git.Repo,
     commit: Any,
-    target_dir: str,
+    target_dir: Union[str, List[str]],
     added_or_modified: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Return entries for source files that call functions changed in
@@ -188,6 +188,16 @@ def _find_cross_file_callers(
     only follows **non-Python** callers — Python changes still get a single
     level here and rely on the coverage map for true transitivity.
     """
+    # Normalise to a list of directory prefixes.
+    if isinstance(target_dir, str):
+        dir_list = [target_dir]
+    else:
+        dir_list = list(target_dir)
+    norm_dirs = [
+        d.rstrip("/") if d not in (".", "./", "") else ""
+        for d in dir_list
+    ]
+
     # Initial frontier = the directly changed function names.
     frontier: Set[str] = set()
     for item in added_or_modified:
@@ -196,7 +206,6 @@ def _find_cross_file_callers(
     if not frontier:
         return []
 
-    norm_dir = target_dir.rstrip("/") if target_dir not in (".", "./", "") else ""
     changed_paths: Set[str] = {item["file"] for item in added_or_modified}
 
     # Read every candidate source file once (path -> lines), so the transitive
@@ -208,7 +217,8 @@ def _find_cross_file_callers(
         if blob.type != "blob":
             continue
         path = blob.path
-        if not path.startswith(norm_dir) or path in changed_paths:
+        in_scope = any(path.startswith(d) for d in norm_dirs)
+        if not in_scope or path in changed_paths:
             continue
         if os.path.splitext(path)[1].lower() in _skip_ext:
             continue
@@ -251,17 +261,25 @@ def get_impacted_files(
     repo_path: str,
     base_commit: str,
     target_commit: str = "HEAD",
-    target_dir: str = "",
+    target_dir: Union[str, List[str]] = "",
 ) -> Dict[str, Any]:
     """Analyse base..target and return impacted source files + functions."""
+    # Normalise to a list of directory prefixes.
+    if isinstance(target_dir, str):
+        dir_list = [target_dir]
+    else:
+        dir_list = list(target_dir)
+    norm_dirs = [
+        d.rstrip("/") if d not in (".", "./", "") else ""
+        for d in dir_list
+    ]
+
     repo = git.Repo(repo_path)
     commit_a = repo.commit(base_commit)
     commit_b = repo.commit(target_commit)
 
     diff_index = commit_a.diff(commit_b, create_patch=True)
     result: Dict[str, Any] = {"added_or_modified": [], "deleted": [], "renamed": []}
-
-    norm_dir = target_dir.rstrip("/") if target_dir not in (".", "./", "") else ""
 
     for item in diff_index:
         a_path = item.a_path or ""
@@ -278,7 +296,9 @@ def get_impacted_files(
             else:
                 change_type = "M"
 
-        in_scope = (not norm_dir) or a_path.startswith(norm_dir) or b_path.startswith(norm_dir)
+        in_scope = (not norm_dirs) or any(
+            a_path.startswith(d) or b_path.startswith(d) for d in norm_dirs
+        )
         if not in_scope:
             continue
 
